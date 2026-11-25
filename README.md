@@ -11,7 +11,7 @@ Sitio público para consultar repuestos, agregarlos al carrito y registrar pedid
 ## Requisitos
 
 - Node.js 20.19+ o 22.12+ y npm.
-- Un proyecto Supabase con permisos para ejecutar el esquema e invitar/deactivar usuarios.
+- Un proyecto Supabase con permisos para ejecutar el esquema y gestionar usuarios.
 - GitHub Pages habilitado para publicar desde GitHub Actions.
 
 ## Instalación
@@ -30,7 +30,7 @@ npm ci
    update public.profiles set rol = 'admin' where id = 'UUID-DEL-ADMIN';
    ```
 
-4. Despliega la función que gestiona invitaciones y cuentas de trabajadores:
+4. Ejecuta la migración `supabase/migrations/20261125000100_worker_password_change.sql` en SQL Editor y despliega la función que gestiona las cuentas de trabajadores:
 
    ```bash
    supabase login
@@ -38,7 +38,7 @@ npm ci
    supabase functions deploy manage-workers
    ```
 
-   La función usa variables seguras del runtime de Supabase. La clave administrativa nunca se incluye en el frontend. En **Authentication → URL Configuration**, configura el sitio y las URL de redirección para las invitaciones.
+   La función crea cuentas confirmadas con contraseña temporal. El trabajador debe cambiarla en su primer acceso. La clave administrativa solo se usa en el runtime de Supabase y nunca se incluye en el frontend.
 
 5. En Storage, comprueba que exista el bucket `product-images` creado por el SQL.
 

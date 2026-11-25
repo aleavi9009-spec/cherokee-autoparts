@@ -9,10 +9,12 @@ create table if not exists public.profiles (
   email text not null default '',
   rol text not null default 'trabajador' check (rol in ('admin', 'trabajador')),
   activo boolean not null default true,
+  must_change_password boolean not null default false,
   fecha_creacion timestamptz not null default now()
 );
 
 alter table public.profiles add column if not exists activo boolean not null default true;
+alter table public.profiles add column if not exists must_change_password boolean not null default false;
 
 create table if not exists public.products (
   id uuid primary key default gen_random_uuid(),
@@ -79,12 +81,13 @@ security definer
 set search_path = ''
 as $$
 begin
-  insert into public.profiles (id, nombre, email, rol)
+  insert into public.profiles (id, nombre, email, rol, must_change_password)
   values (
     new.id,
     coalesce(new.raw_user_meta_data ->> 'nombre', new.raw_user_meta_data ->> 'name', ''),
     coalesce(new.email, ''),
-    'trabajador'
+    'trabajador',
+    coalesce(new.raw_app_meta_data ->> 'must_change_password', 'false') = 'true'
   );
   return new;
 end;
@@ -104,7 +107,10 @@ stable
 security definer
 set search_path = ''
 as $$
-  select p.rol from public.profiles p where p.id = (select auth.uid()) and p.activo
+  select p.rol from public.profiles p
+  where p.id = (select auth.uid())
+    and p.activo
+    and (p.rol = 'admin' or not p.must_change_password)
 $$;
 
 revoke all on function public.current_staff_role() from public, anon;

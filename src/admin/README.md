@@ -1,16 +1,18 @@
 # Panel administrativo
 
-El panel está disponible en `/admin.html`. Inicia sesión con Supabase Auth; después consulta `profiles` para validar rol y estado de la cuenta. La interfaz incluye resumen, gestión del catálogo, pedidos y, solo para administradores, gestión de trabajadores.
+El panel está disponible en `/admin.html`. Supabase Auth valida la sesión y `profiles` determina el rol y el estado. La sección Trabajadores está disponible solo para administradores.
 
-## Aplicar permisos
+## Migración de contraseña temporal
 
-Vuelve a ejecutar `supabase/schema.sql` en el SQL Editor del proyecto. Añade `profiles.activo`, para cortar permisos RLS a cuentas desactivadas, y permite que solo los administradores actualicen el estado de pedidos. Trabajadores mantienen lectura de pedidos y gestión de productos según las políticas existentes.
+Antes de publicar el frontend o desplegar `manage-workers`, ejecuta el contenido de `supabase/migrations/20261125000100_worker_password_change.sql` en el SQL Editor del proyecto. La migración agrega `profiles.must_change_password` y bloquea las políticas RLS de trabajadores mientras tengan pendiente el cambio. Los administradores y cuentas existentes conservan su acceso.
 
-## Desplegar la función de trabajadores
+`supabase/schema.sql` también incluye el esquema actualizado para instalaciones nuevas.
 
-El proyecto remoto respondió `404 NOT_FOUND` para `manage-workers`: la función existe en el repositorio, pero debe desplegarse para que la pestaña pueda cargar. `profiles` ya incluye `nombre`, `email`, `rol`, `activo` y `fecha_creacion`; no se necesitan tablas ni columnas nuevas para el módulo. Para sincronizar los cambios de correo solo después de su confirmación en Auth, ejecuta una vez `supabase/worker_email_sync.sql` en SQL Editor. No hay columnas de nombre de usuario ni cargo en el esquema actual, así que el formulario no inventa ni guarda esos campos. El rol para cuentas nuevas siempre es `trabajador`.
+## Crear cuentas de trabajadores
 
-Desde la raíz del proyecto, con Supabase CLI instalado, ejecuta:
+El administrador crea la cuenta desde Trabajadores con nombre y correo. `manage-workers` comprueba duplicados, crea un usuario confirmado mediante Auth Admin API, asigna el rol `trabajador` y muestra una contraseña temporal aleatoria una sola vez. Copia y entrega esa contraseña al trabajador. Al iniciar sesión, deberá definir una nueva antes de acceder al panel. La clave `SUPABASE_SERVICE_ROLE_KEY` solo se usa dentro de la Edge Function.
+
+Desde la raíz del proyecto, con Supabase CLI instalado:
 
 ```sh
 supabase login
@@ -18,24 +20,18 @@ supabase link --project-ref eznpkrvnkldtjqitnplz
 supabase functions deploy manage-workers
 ```
 
-`supabase/config.toml` mantiene `verify_jwt = true`; la función vuelve a validar el usuario y comprueba `profiles.rol = 'admin'` y `activo = true` antes de cada operación. Supabase provee `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al runtime. La clave de servicio nunca debe agregarse a `.env.local`, variables `VITE_*` ni al frontend.
+`supabase/config.toml` mantiene `verify_jwt = true`. La función comprueba el JWT y el perfil en cada solicitud. Solo un administrador activo puede crear, listar, editar y activar o desactivar trabajadores. El propio trabajador puede completar el cambio pendiente de contraseña; la función actualiza Auth primero y marca el perfil como completado solo después del éxito. No puede cambiar su rol.
 
-Configura `ALLOWED_ORIGIN` con el origen del sitio (por ejemplo, `https://tudominio.com`) si quieres restringir CORS; si no se define, la función acepta orígenes web y sigue exigiendo JWT y rol administrador. En **Authentication → URL Configuration**, revisa `Site URL` y `Redirect URLs` para el dominio donde el trabajador completará la invitación.
+Supabase provee `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al runtime. No agregues la clave de servicio a `.env.local`, variables `VITE_*` ni al frontend. Si se define `ALLOWED_ORIGIN`, configúralo con `https://aleavi9009-spec.github.io`; de lo contrario la función conserva CORS `*` y sigue exigiendo JWT y autorización por perfil.
 
-La función verifica el JWT y consulta `profiles.rol` y `profiles.activo` en cada operación. Solo `admin` puede invitar, listar, editar datos o desactivar/reactivar perfiles con rol `trabajador`. Desactivar bloquea Auth y marca el perfil inactivo; RLS consulta ese estado en la función de rol. No puede editar, elevar ni desactivar perfiles administradores.
+Para cambios de correo del trabajador, ejecuta una vez `supabase/worker_email_sync.sql` en SQL Editor. No hay columnas de nombre de usuario ni cargo en el esquema actual; el formulario guarda el nombre en `profiles.nombre`.
 
 ## Acceso inicial
 
-No existe registro público desde el panel. Crea el primer administrador en Supabase Auth y promueve su perfil desde SQL Editor (solo una vez):
+Crea el primer administrador en Supabase Auth y promueve su perfil desde SQL Editor (solo una vez):
 
 ```sql
 update public.profiles set rol = 'admin' where id = 'UUID-DEL-ADMIN';
 ```
 
-El enlace de acceso al panel está en el pie de la página pública o puede abrirse directamente en `/admin.html`.
-
-## Invitaciones en GitHub Pages
-
-La Edge Function dirige las invitaciones a `https://aleavi9009-spec.github.io/cherokee-autoparts/?auth=invite`. Después de confirmar el enlace, la página pública procesa la sesión, verifica que el perfil activo tenga rol `trabajador` y permite establecer la contraseña. Tras guardarla, cierra la sesión para que el trabajador inicie sesión en `/cherokee-autoparts/admin.html`.
-
-En Supabase **Authentication → URL Configuration → Redirect URLs**, permite `https://aleavi9009-spec.github.io/cherokee-autoparts/**`. Revisa también **Authentication → Email Templates → Invite user**: conserva el enlace `{{ .ConfirmationURL }}` o usa `{{ .RedirectTo }}` como destino. No construyas el enlace con `{{ .SiteURL }}`; si la URL no está permitida o el template ignora `RedirectTo`, Supabase puede recurrir a `Site URL` (que actualmente apunta a localhost). Cada cambio a `manage-workers` requiere volver a desplegarla.
+El acceso está en el pie de la página pública o en `/admin.html`. Después de ejecutar la migración y desplegar la función, publica el resultado de `npm run build` en GitHub Pages.

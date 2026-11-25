@@ -9,6 +9,7 @@ const base = import.meta.env.BASE_URL
 const states = ['pendiente', 'confirmado', 'preparando', 'completado', 'cancelado']
 let currentUser = null
 let role = null
+let pendingPasswordUser = null
 let page = 'dashboard'
 let products = []
 let workers = []
@@ -63,7 +64,7 @@ async function signIn(event) {
 
 async function verifyAndRender(user) {
   if (!supabase || !user) return loginView('No hay una sesión activa.')
-  const { data: profile, error } = await supabase.from('profiles').select('rol,activo').eq('id', user.id).maybeSingle()
+  const { data: profile, error } = await supabase.from('profiles').select('rol,activo,must_change_password').eq('id', user.id).maybeSingle()
   if (error || !profile || !profile.activo || !['admin', 'trabajador'].includes(profile.rol)) {
     await supabase.auth.signOut()
     currentUser = null
@@ -72,7 +73,48 @@ async function verifyAndRender(user) {
   }
   currentUser = user
   role = profile.rol
+  if (profile.rol === 'trabajador' && profile.must_change_password) return passwordSetupView(user)
+  pendingPasswordUser = null
   shell()
+}
+
+function passwordSetupView(user, errorMessage = '') {
+  pendingPasswordUser = user
+  root.innerHTML = `<main class="login-page"><a class="brand" href="${base}" aria-label="Cherokee Auto Parts"><span class="brand__mark">C<span>.</span></span><span class="brand__name">CHEROKEE <small>AUTO PARTS</small></span></a><section class="login-card password-setup-card"><p class="admin-eyebrow">ACTIVA TU ACCESO</p><h1>Cambia tu contraseña temporal</h1><p>Antes de continuar, establece una contraseña personal para ${e(user.email || 'tu cuenta')}.</p>${errorMessage ? `<div class="admin-alert">${e(errorMessage)}</div>` : ''}<form data-password-setup-form><label>Nueva contraseña<div class="admin-password-field"><input name="password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required/><button type="button" data-password-toggle>Mostrar</button></div></label><label>Confirmar contraseña<div class="admin-password-field"><input name="confirmation" type="password" autocomplete="new-password" minlength="12" maxlength="128" required/><button type="button" data-password-toggle>Mostrar</button></div></label><small>Usa entre 12 y 128 caracteres.</small><button class="admin-primary" type="submit">Establecer contraseña</button></form><button class="password-setup-signout" type="button" data-password-signout>Cerrar sesión</button></section></main>`
+  const form = root.querySelector('[data-password-setup-form]')
+  form.querySelectorAll('[data-password-toggle]').forEach(button => button.addEventListener('click', () => {
+    const input = button.parentElement.querySelector('input')
+    input.type = input.type === 'password' ? 'text' : 'password'
+    button.textContent = input.type === 'password' ? 'Mostrar' : 'Ocultar'
+  }))
+  form.addEventListener('submit', completePasswordChange)
+  root.querySelector('[data-password-signout]').addEventListener('click', signOut)
+}
+
+async function completePasswordChange(event) {
+  event.preventDefault()
+  const form = event.currentTarget
+  const password = form.elements.password.value
+  const confirmation = form.elements.confirmation.value
+  const button = form.querySelector('[type="submit"]')
+  if (password.length < 12 || password.length > 128) return passwordSetupView(pendingPasswordUser, 'La contraseña debe tener entre 12 y 128 caracteres.')
+  if (password !== confirmation) return passwordSetupView(pendingPasswordUser, 'Las contraseñas no coinciden.')
+  button.disabled = true
+  button.textContent = 'Actualizando…'
+  try {
+    await workerRequest({ action: 'complete-password-change', password })
+  } catch (error) {
+    passwordSetupView(pendingPasswordUser, error.message || 'No se pudo actualizar la contraseña. Inténtalo de nuevo.')
+    return
+  }
+  const { data, error } = await supabase.auth.getUser()
+  if (error || !data.user) {
+    await supabase.auth.signOut()
+    currentUser = null
+    role = null
+    return loginView('La contraseña se actualizó. Inicia sesión con tu nueva contraseña para continuar.')
+  }
+  await verifyAndRender(data.user)
 }
 
 async function signOut() {
@@ -254,12 +296,12 @@ async function loadWorkers({ preserveMessage = false } = {}) {
 
 function renderWorkers() {
   const content = root.querySelector('[data-admin-content]')
-  content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Personal con rol trabajador. La cuenta administradora está protegida.</p></div><button class="admin-primary" type="button" data-worker-add>+ Agregar trabajador</button></div><form class="admin-card worker-form" data-worker-form hidden><h3>Invitar trabajador</h3><div class="worker-form-grid"><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><label>Rol<select disabled><option>Trabajador · acceso de personal</option></select></label><div class="worker-invite-note"><span class="status-pill is-good">Activo al aceptar invitación</span><small>Se enviará un enlace seguro para que establezca su contraseña. La cuenta nueva nunca recibe rol administrador.</small></div></div><div class="form-actions"><button class="admin-secondary" type="button" data-worker-cancel>Cancelar</button><button class="admin-primary" type="submit">Enviar invitación</button></div></form><div class="admin-card team-list"><div class="admin-list-head"><h3>Personal registrado</h3><span>${workers.length} ${workers.length === 1 ? 'trabajador' : 'trabajadores'}</span></div>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="worker-role">Rol: Trabajador</span><span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><div class="worker-actions"><button type="button" data-worker-edit="${e(worker.id)}">Editar datos</button><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></div></article>`).join('') : '<div class="admin-empty worker-empty"><p>No hay trabajadores registrados todavía.</p><button class="admin-primary" type="button" data-worker-empty-add>+ Agregar trabajador</button></div>'}</div><dialog class="detail-dialog worker-edit-dialog" data-worker-dialog><button class="dialog-close" type="button" data-worker-dialog-close aria-label="Cerrar">×</button><h2>Editar trabajador</h2><form data-worker-edit-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><p>Rol: <strong>Trabajador</strong>. El nivel de acceso no se puede elevar desde este formulario.</p><div class="form-actions"><button class="admin-secondary" type="button" data-worker-edit-cancel>Cancelar</button><button class="admin-primary" type="submit">Guardar cambios</button></div></form></dialog>`
+  content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Personal con rol trabajador. La cuenta administradora está protegida.</p></div><button class="admin-primary" type="button" data-worker-add>+ Agregar trabajador</button></div><form class="admin-card worker-form" data-worker-form hidden><h3>Crear cuenta de trabajador</h3><div class="worker-form-grid"><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><div class="worker-create-note"><span class="status-pill is-good">Rol trabajador · cuenta activa</span><small>Se generará una contraseña temporal aleatoria. Cópiala y entrégasela al trabajador; deberá cambiarla al iniciar sesión.</small></div></div><div class="form-actions"><button class="admin-secondary" type="button" data-worker-cancel>Cancelar</button><button class="admin-primary" type="submit">Crear cuenta de trabajador</button></div></form><div class="admin-card team-list"><div class="admin-list-head"><h3>Personal registrado</h3><span>${workers.length} ${workers.length === 1 ? 'trabajador' : 'trabajadores'}</span></div>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="worker-role">Rol: Trabajador</span>${worker.must_change_password ? '<span class="status-pill is-muted">Cambio de contraseña pendiente</span>' : ''}<span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><div class="worker-actions"><button type="button" data-worker-edit="${e(worker.id)}">Editar datos</button><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></div></article>`).join('') : '<div class="admin-empty worker-empty"><p>No hay trabajadores registrados todavía.</p><button class="admin-primary" type="button" data-worker-empty-add>+ Agregar trabajador</button></div>'}</div><dialog class="detail-dialog worker-edit-dialog" data-worker-dialog><button class="dialog-close" type="button" data-worker-dialog-close aria-label="Cerrar">×</button><h2>Editar trabajador</h2><form data-worker-edit-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><p>Rol: <strong>Trabajador</strong>. El nivel de acceso no se puede elevar desde este formulario.</p><div class="form-actions"><button class="admin-secondary" type="button" data-worker-edit-cancel>Cancelar</button><button class="admin-primary" type="submit">Guardar cambios</button></div></form></dialog>`
   const form = content.querySelector('[data-worker-form]')
   content.querySelector('[data-worker-add]').addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
   content.querySelector('[data-worker-cancel]').addEventListener('click', () => { form.reset(); form.hidden = true })
   content.querySelector('[data-worker-empty-add]')?.addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
-  form.addEventListener('submit', inviteWorker)
+  form.addEventListener('submit', createWorker)
   content.querySelectorAll('[data-worker-toggle]').forEach(button => button.addEventListener('click', () => toggleWorker(button.dataset.workerToggle, button.dataset.active === 'true')))
   content.querySelectorAll('[data-worker-edit]').forEach(button => button.addEventListener('click', () => openWorkerEdit(button.dataset.workerEdit)))
   const dialog = content.querySelector('[data-worker-dialog]')
@@ -279,21 +321,51 @@ function openWorkerEdit(userId) {
   dialog.showModal()
 }
 
-async function inviteWorker(event) {
+function showCreatedWorkerPassword(password, email) {
+  const dialog = document.createElement('dialog')
+  dialog.className = 'detail-dialog worker-created-dialog'
+  dialog.innerHTML = '<button class="dialog-close" type="button" data-created-close aria-label="Cerrar">×</button><p class="admin-eyebrow">CUENTA CREADA</p><h2>Entrega esta contraseña temporal</h2><p>El trabajador iniciará sesión con este correo y deberá cambiar la contraseña antes de acceder al panel.</p><label>Correo electrónico<input data-created-email readonly/></label><label>Contraseña temporal<div class="created-password-field"><input data-created-password type="text" readonly/><button type="button" data-created-copy>Copiar</button></div></label><p class="created-copy-status" data-created-copy-status role="status"></p><div class="form-actions"><button class="admin-primary" type="button" data-created-done>Listo</button></div>'
+  root.append(dialog)
+  const passwordInput = dialog.querySelector('[data-created-password]')
+  const copyStatus = dialog.querySelector('[data-created-copy-status]')
+  dialog.querySelector('[data-created-email]').value = email
+  passwordInput.value = password
+  const close = () => dialog.close()
+  dialog.querySelector('[data-created-close]').addEventListener('click', close)
+  dialog.querySelector('[data-created-done]').addEventListener('click', close)
+  dialog.querySelector('[data-created-copy]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(passwordInput.value)
+      copyStatus.textContent = 'Contraseña copiada.'
+    } catch {
+      passwordInput.select()
+      const copied = document.execCommand('copy')
+      copyStatus.textContent = copied ? 'Contraseña copiada.' : 'Selecciona y copia la contraseña manualmente.'
+    }
+  })
+  dialog.addEventListener('close', () => {
+    passwordInput.value = ''
+    dialog.remove()
+    void loadWorkers({ preserveMessage: true }).then(() => message(`Cuenta creada para ${email}. Entrega la contraseña temporal al trabajador.`, 'is-success'))
+  }, { once: true })
+  dialog.showModal()
+}
+
+async function createWorker(event) {
   event.preventDefault()
   const form = event.currentTarget
   const button = form.querySelector('button[type="submit"]')
   const values = new FormData(form)
   button.disabled = true
-  button.textContent = 'Enviando…'
+  button.textContent = 'Creando cuenta…'
   try {
-    await workerRequest({ action: 'invite', nombre: values.get('nombre'), email: values.get('email') })
+    const created = await workerRequest({ action: 'create', nombre: values.get('nombre'), email: values.get('email') })
     form.reset()
-    await loadWorkers({ preserveMessage: true })
-    message('Invitación enviada. El trabajador recibirá un enlace seguro para configurar su contraseña.', 'is-success')
-  } catch (error) { message(`No se pudo enviar la invitación: ${error.message}`, 'is-error') }
+    form.hidden = true
+    showCreatedWorkerPassword(created.temporaryPassword, values.get('email'))
+  } catch (error) { message(`No se pudo crear la cuenta: ${error.message}`, 'is-error') }
   button.disabled = false
-  button.textContent = 'Enviar invitación'
+  button.textContent = 'Crear cuenta de trabajador'
 }
 
 async function saveWorker(event) {

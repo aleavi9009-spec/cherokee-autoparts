@@ -22,7 +22,7 @@ Si ya ejecutaste una versión anterior del script, vuelve a ejecutar el archivo 
 
 No habilites el registro público de usuarios.
 
-1. En **Authentication → Users**, usa **Add user** para crear tu cuenta con un correo propio y una contraseña segura (o invita el correo desde el panel). No guardes la contraseña en la tabla `profiles`; Supabase Auth la gestiona.
+1. En **Authentication → Users**, usa **Add user** para crear tu cuenta con un correo propio y una contraseña segura. No guardes la contraseña en la tabla `profiles`; Supabase Auth la gestiona.
 2. Copia el UUID de ese usuario desde la lista de usuarios.
 3. En SQL Editor ejecuta lo siguiente, reemplazando el UUID por el valor copiado:
 
@@ -36,7 +36,7 @@ where id = 'UUID-DEL-USUARIO-CREADO';
 
 ## 4. Registrar trabajadores
 
-La pestaña **Trabajadores** invita y administra cuentas mediante la Edge Function `manage-workers`. El trigger crea cada perfil invitado como `trabajador`. La clave `service_role` permanece únicamente en el entorno de Edge Functions; ningún cliente puede cambiar roles ni crear perfiles con privilegios. Para sincronizar correos editados luego de confirmarlos en Auth, ejecuta una vez `worker_email_sync.sql` en SQL Editor.
+La pestaña **Trabajadores** crea cuentas confirmadas con contraseñas temporales mediante la Edge Function `manage-workers`. El perfil se crea con rol `trabajador` y obliga a cambiar la contraseña en el primer acceso. Ejecuta `migrations/20261125000100_worker_password_change.sql` en SQL Editor antes de publicar el frontend y desplegar la función. La clave `service_role` permanece únicamente en Edge Functions; el frontend no puede crear perfiles con privilegios. Para sincronizar correos editados luego de confirmarlos en Auth, ejecuta una vez `worker_email_sync.sql` en SQL Editor.
 
 ## 5. Conectar el frontend
 
@@ -60,4 +60,4 @@ Puedes copiar `.env.example` como base. Detén y vuelve a iniciar `npm run dev` 
 
 ## Nota sobre políticas y permisos de personal
 
-Este SQL cubre la base, Auth, RLS, creación pública de pedidos y almacenamiento. La gestión de invitaciones y cuentas usa la Edge Function protegida `manage-workers`; consulta `src/admin/README.md` para desplegarla. No llames Auth Admin API desde el frontend.
+Este SQL cubre la base, Auth, RLS, creación pública de pedidos y almacenamiento. La gestión de cuentas y los cambios obligatorios de contraseña usan la Edge Function protegida `manage-workers`; consulta `src/admin/README.md` para desplegarla. No llames Auth Admin API desde el frontend.
