@@ -8,15 +8,21 @@ Vuelve a ejecutar `supabase/schema.sql` en el SQL Editor del proyecto. Añade `p
 
 ## Desplegar la función de trabajadores
 
-La invitación y el bloqueo de Auth requieren Auth Admin API. El frontend llama a `supabase/functions/manage-workers/index.ts`; la clave de servicio solo existe en el entorno seguro de Edge Functions.
+El proyecto remoto respondió `404 NOT_FOUND` para `manage-workers`: la función existe en el repositorio, pero debe desplegarse para que la pestaña pueda cargar. `profiles` ya incluye `nombre`, `email`, `rol`, `activo` y `fecha_creacion`; no se necesitan tablas ni columnas nuevas para el módulo. Para sincronizar los cambios de correo solo después de su confirmación en Auth, ejecuta una vez `supabase/worker_email_sync.sql` en SQL Editor. No hay columnas de nombre de usuario ni cargo en el esquema actual, así que el formulario no inventa ni guarda esos campos. El rol para cuentas nuevas siempre es `trabajador`.
 
-1. Instala y autentica Supabase CLI para el proyecto.
-2. Desde la raíz del repositorio enlaza el ref del proyecto: `supabase link --project-ref TU_PROJECT_REF`.
-3. Despliega: `supabase functions deploy manage-workers`.
-4. Configura `ALLOWED_ORIGIN` como el dominio del sitio (opcional para desarrollo local; por defecto acepta cualquier origen, pero cada petición exige JWT de administrador). Supabase provee las variables del proyecto y la clave administrativa al runtime de Edge Functions. No las agregues a `VITE_*` ni al frontend.
-5. En **Authentication → URL Configuration**, añade el dominio del sitio en Site URL y Redirect URLs si vas a personalizar el destino del enlace de invitación.
+Desde la raíz del proyecto, con Supabase CLI instalado, ejecuta:
 
-La función verifica el JWT y consulta `profiles.rol` y `profiles.activo` en cada operación. Solo `admin` puede invitar, listar o desactivar/re-activar trabajadores. Desactivar también bloquea Auth y marca el perfil inactivo; RLS consulta ese estado en la función de rol.
+```sh
+supabase login
+supabase link --project-ref eznpkrvnkldtjqitnplz
+supabase functions deploy manage-workers
+```
+
+`supabase/config.toml` mantiene `verify_jwt = true`; la función vuelve a validar el usuario y comprueba `profiles.rol = 'admin'` y `activo = true` antes de cada operación. Supabase provee `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al runtime. La clave de servicio nunca debe agregarse a `.env.local`, variables `VITE_*` ni al frontend.
+
+Configura `ALLOWED_ORIGIN` con el origen del sitio (por ejemplo, `https://tudominio.com`) si quieres restringir CORS; si no se define, la función acepta orígenes web y sigue exigiendo JWT y rol administrador. En **Authentication → URL Configuration**, revisa `Site URL` y `Redirect URLs` para el dominio donde el trabajador completará la invitación.
+
+La función verifica el JWT y consulta `profiles.rol` y `profiles.activo` en cada operación. Solo `admin` puede invitar, listar, editar datos o desactivar/reactivar perfiles con rol `trabajador`. Desactivar bloquea Auth y marca el perfil inactivo; RLS consulta ese estado en la función de rol. No puede editar, elevar ni desactivar perfiles administradores.
 
 ## Acceso inicial
 

@@ -36,7 +36,7 @@ where id = 'UUID-DEL-USUARIO-CREADO';
 
 ## 4. Registrar trabajadores
 
-Como administrador, crea/invita cada cuenta desde **Authentication → Users** del panel. El trigger crea cada perfil automáticamente como `trabajador`. No compartas la cuenta de administrador. Para revocar acceso, deshabilita o elimina la cuenta desde Auth. El esquema intencionalmente no deja que los clientes modifiquen roles ni creen perfiles con permisos; la creación de invitaciones desde una futura interfaz administrativa requiere una función de servidor protegida que use la Admin API, nunca la clave `service_role` en el navegador.
+La pestaña **Trabajadores** invita y administra cuentas mediante la Edge Function `manage-workers`. El trigger crea cada perfil invitado como `trabajador`. La clave `service_role` permanece únicamente en el entorno de Edge Functions; ningún cliente puede cambiar roles ni crear perfiles con privilegios. Para sincronizar correos editados luego de confirmarlos en Auth, ejecuta una vez `worker_email_sync.sql` en SQL Editor.
 
 ## 5. Conectar el frontend
 
@@ -47,7 +47,7 @@ VITE_SUPABASE_URL=https://TU-PROJECT-REF.supabase.co
 VITE_SUPABASE_ANON_KEY=TU-PUBLISHABLE-KEY
 ```
 
-Puedes copiar `.env.example` como base. Detén y vuelve a iniciar `npm run dev` para que Vite cargue las variables. La clave pública puede aparecer en el bundle del frontend; no pongas una `service_role`/`secret` ahí. Actualmente esto solo inicializa el cliente: las pantallas aún deben implementar inicio/cierre de sesión, CRUD del catálogo, consulta autenticada de pedidos, carga de imágenes y llamada a `place_order`.
+Puedes copiar `.env.example` como base. Detén y vuelve a iniciar `npm run dev` para que Vite cargue las variables. La clave pública puede aparecer en el bundle del frontend; no pongas una `service_role`/`secret` ahí.
 
 ## 6. Cómo se aplican los permisos
 
@@ -60,4 +60,4 @@ Puedes copiar `.env.example` como base. Detén y vuelve a iniciar `npm run dev` 
 
 ## Nota sobre políticas y permisos de personal
 
-Este SQL cubre la base, Auth, RLS, creación pública de pedidos y almacenamiento. La gestión de invitaciones/usuarios se hace desde el panel de Supabase hasta implementar un endpoint confiable para la Admin API. No se debe llamar esa API desde el frontend.
+Este SQL cubre la base, Auth, RLS, creación pública de pedidos y almacenamiento. La gestión de invitaciones y cuentas usa la Edge Function protegida `manage-workers`; consulta `src/admin/README.md` para desplegarla. No llames Auth Admin API desde el frontend.

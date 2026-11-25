@@ -218,22 +218,65 @@ async function showOrderDetail(id) {
 }
 
 async function workerRequest(body) {
-  const { data, error } = await supabase.functions.invoke('manage-workers', { body })
-  if (error) throw new Error(error.message)
+  const { data: { session }, error: sessionError } = await supabase.auth.getSession()
+  if (sessionError || !session?.access_token) throw new Error('Tu sesión expiró. Vuelve a iniciar sesión.')
+  const { data, error } = await supabase.functions.invoke('manage-workers', {
+    body,
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  })
+  if (error) {
+    let detail = error.message
+    if (error.context instanceof Response) {
+      const payload = await error.context.clone().json().catch(() => null)
+      detail = payload?.error || payload?.message || error.context.statusText || detail
+    } else if (error.cause?.message) detail = error.cause.message
+    throw new Error(detail)
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }
 
-async function loadWorkers() {
+async function loadWorkers({ preserveMessage = false } = {}) {
   const content = root.querySelector('[data-admin-content]')
+  if (!preserveMessage) message('')
   content.innerHTML = '<p class="admin-loading">Cargando trabajadores…</p>'
   try {
     const { workers: list } = await workerRequest({ action: 'list' })
+    if (page !== 'team') return
     workers = list || []
-    content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Invita personal y administra su acceso.</p></div></div><div class="team-layout"><form class="admin-card invite-form" data-invite-form><h3>Registrar trabajador</h3><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120"/></label><label>Correo electrónico<input name="email" type="email" required/></label><button class="admin-primary" type="submit">Enviar invitación</button><p>La persona recibirá un enlace para crear su contraseña.</p></form><div class="admin-card team-list"><h3>Personal registrado</h3>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></article>`).join('') : '<p class="admin-empty">No hay trabajadores registrados.</p>'}</div></div>`
-    content.querySelector('[data-invite-form]').addEventListener('submit', inviteWorker)
-    content.querySelectorAll('[data-worker-toggle]').forEach(button => button.addEventListener('click', () => toggleWorker(button.dataset.workerToggle, button.dataset.active === 'true')))
-  } catch (error) { message(`No se pudo cargar trabajadores: ${error.message}. Verifica que la función manage-workers esté desplegada.`, 'is-error') }
+    renderWorkers()
+  } catch (error) {
+    if (page !== 'team') return
+    content.innerHTML = `<div class="admin-card worker-load-error"><h2>No se pudieron cargar los trabajadores</h2><p>${e(error.message)}</p><p>Comprueba que <code>manage-workers</code> esté desplegada y que la configuración CORS incluya el dominio de esta página.</p><button class="admin-secondary" type="button" data-worker-retry>Reintentar</button></div>`
+    content.querySelector('[data-worker-retry]').addEventListener('click', () => loadWorkers())
+  }
+}
+
+function renderWorkers() {
+  const content = root.querySelector('[data-admin-content]')
+  content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Personal con rol trabajador. La cuenta administradora está protegida.</p></div><button class="admin-primary" type="button" data-worker-add>+ Agregar trabajador</button></div><form class="admin-card worker-form" data-worker-form hidden><h3>Invitar trabajador</h3><div class="worker-form-grid"><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><label>Rol<select disabled><option>Trabajador · acceso de personal</option></select></label><div class="worker-invite-note"><span class="status-pill is-good">Activo al aceptar invitación</span><small>Se enviará un enlace seguro para que establezca su contraseña. La cuenta nueva nunca recibe rol administrador.</small></div></div><div class="form-actions"><button class="admin-secondary" type="button" data-worker-cancel>Cancelar</button><button class="admin-primary" type="submit">Enviar invitación</button></div></form><div class="admin-card team-list"><div class="admin-list-head"><h3>Personal registrado</h3><span>${workers.length} ${workers.length === 1 ? 'trabajador' : 'trabajadores'}</span></div>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="worker-role">Rol: Trabajador</span><span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><div class="worker-actions"><button type="button" data-worker-edit="${e(worker.id)}">Editar datos</button><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></div></article>`).join('') : '<div class="admin-empty worker-empty"><p>No hay trabajadores registrados todavía.</p><button class="admin-primary" type="button" data-worker-empty-add>+ Agregar trabajador</button></div>'}</div><dialog class="detail-dialog worker-edit-dialog" data-worker-dialog><button class="dialog-close" type="button" data-worker-dialog-close aria-label="Cerrar">×</button><h2>Editar trabajador</h2><form data-worker-edit-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><p>Rol: <strong>Trabajador</strong>. El nivel de acceso no se puede elevar desde este formulario.</p><div class="form-actions"><button class="admin-secondary" type="button" data-worker-edit-cancel>Cancelar</button><button class="admin-primary" type="submit">Guardar cambios</button></div></form></dialog>`
+  const form = content.querySelector('[data-worker-form]')
+  content.querySelector('[data-worker-add]').addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
+  content.querySelector('[data-worker-cancel]').addEventListener('click', () => { form.reset(); form.hidden = true })
+  content.querySelector('[data-worker-empty-add]')?.addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
+  form.addEventListener('submit', inviteWorker)
+  content.querySelectorAll('[data-worker-toggle]').forEach(button => button.addEventListener('click', () => toggleWorker(button.dataset.workerToggle, button.dataset.active === 'true')))
+  content.querySelectorAll('[data-worker-edit]').forEach(button => button.addEventListener('click', () => openWorkerEdit(button.dataset.workerEdit)))
+  const dialog = content.querySelector('[data-worker-dialog]')
+  content.querySelector('[data-worker-dialog-close]').addEventListener('click', () => dialog.close())
+  content.querySelector('[data-worker-edit-cancel]').addEventListener('click', () => dialog.close())
+  content.querySelector('[data-worker-edit-form]').addEventListener('submit', saveWorker)
+}
+
+function openWorkerEdit(userId) {
+  const worker = workers.find(item => item.id === userId)
+  if (!worker) return
+  const dialog = root.querySelector('[data-worker-dialog]')
+  const form = dialog.querySelector('[data-worker-edit-form]')
+  form.elements.userId.value = worker.id
+  form.elements.nombre.value = worker.nombre || ''
+  form.elements.email.value = worker.email || ''
+  dialog.showModal()
 }
 
 async function inviteWorker(event) {
@@ -242,11 +285,29 @@ async function inviteWorker(event) {
   const button = form.querySelector('button[type="submit"]')
   const values = new FormData(form)
   button.disabled = true
+  button.textContent = 'Enviando…'
   try {
     await workerRequest({ action: 'invite', nombre: values.get('nombre'), email: values.get('email') })
-    message('Invitación enviada al correo del trabajador.', 'is-success')
-    await loadWorkers()
+    form.reset()
+    await loadWorkers({ preserveMessage: true })
+    message('Invitación enviada. El trabajador recibirá un enlace seguro para configurar su contraseña.', 'is-success')
   } catch (error) { message(`No se pudo enviar la invitación: ${error.message}`, 'is-error') }
+  button.disabled = false
+  button.textContent = 'Enviar invitación'
+}
+
+async function saveWorker(event) {
+  event.preventDefault()
+  const form = event.currentTarget
+  const button = form.querySelector('[type="submit"]')
+  const values = new FormData(form)
+  button.disabled = true
+  try {
+    await workerRequest({ action: 'update', userId: values.get('userId'), nombre: values.get('nombre'), email: values.get('email') })
+    root.querySelector('[data-worker-dialog]').close()
+    await loadWorkers({ preserveMessage: true })
+    message('Datos del trabajador guardados. Si cambiaste el correo, el nuevo dato se reflejará al confirmar el cambio desde Auth.', 'is-success')
+  } catch (error) { message(`No se pudieron guardar los cambios: ${error.message}`, 'is-error') }
   button.disabled = false
 }
 

@@ -65,12 +65,45 @@ Deno.serve(async (request) => {
   if (body.action === 'invite') {
     const email = String(body.email || '').trim().toLowerCase()
     const nombre = String(body.nombre || '').trim()
-    if (!/^\S+@\S+\.\S+$/.test(email) || nombre.length < 2 || nombre.length > 120) {
+    if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email) || nombre.length < 2 || nombre.length > 120) {
       return respond({ error: 'Ingresa un nombre y un correo válidos.' }, 400)
     }
     const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, { data: { nombre } })
     if (error) return respond({ error: error.message }, 400)
     return respond({ id: data.user.id, message: 'Invitación enviada.' }, 201)
+  }
+
+  if (body.action === 'update') {
+    const userId = String(body.userId || '')
+    const nombre = String(body.nombre || '').trim()
+    const email = String(body.email || '').trim().toLowerCase()
+    if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(userId)
+      || !/^\S+@\S+\.\S+$/.test(email) || email.length > 254 || nombre.length < 2 || nombre.length > 120) {
+      return respond({ error: 'Ingresa un trabajador, nombre y correo válidos.' }, 400)
+    }
+    const { data: target, error: targetError } = await adminClient.from('profiles')
+      .select('id,rol,nombre,email').eq('id', userId).maybeSingle()
+    if (targetError || !target || target.rol !== 'trabajador') {
+      return respond({ error: 'No se encontró un trabajador para esa cuenta.' }, 404)
+    }
+
+    const { data: authResult, error: authLookupError } = await adminClient.auth.admin.getUserById(userId)
+    if (authLookupError || !authResult.user) return respond({ error: 'No se pudo verificar la cuenta del trabajador.' }, 404)
+    const previousUser = authResult.user
+    const authUpdates: { email?: string; user_metadata: Record<string, unknown> } = {
+      user_metadata: { ...previousUser.user_metadata, nombre },
+    }
+    if (email !== previousUser.email?.toLowerCase()) authUpdates.email = email
+    const { error: profileUpdateError } = await adminClient.from('profiles')
+      .update({ nombre }).eq('id', userId).eq('rol', 'trabajador')
+    if (profileUpdateError) return respond({ error: 'No se pudieron guardar los datos del trabajador.' }, 500)
+
+    const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, authUpdates)
+    if (authUpdateError) {
+      await adminClient.from('profiles').update({ nombre: target.nombre }).eq('id', userId).eq('rol', 'trabajador')
+      return respond({ error: authUpdateError.message }, 400)
+    }
+    return respond({ message: 'Datos del trabajador actualizados.' })
   }
 
   if (body.action === 'deactivate' || body.action === 'reactivate') {
