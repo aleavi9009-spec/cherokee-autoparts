@@ -11,49 +11,120 @@ const inviteForm = document.querySelector('[data-invite-form]')
 const inviteStatus = document.querySelector('[data-invite-status]')
 const inviteError = document.querySelector('[data-invite-error]')
 const inviteComplete = document.querySelector('[data-invite-complete]')
+const inviteSignOutError = document.querySelector('[data-invite-sign-out-error]')
 inviteDialog.querySelector('[data-invite-close]').addEventListener('click', () => inviteDialog.close())
 
+const inviteUrl = new URL(window.location.href)
+const inviteQuery = new URLSearchParams(inviteUrl.search)
+const inviteHash = new URLSearchParams(inviteUrl.hash.slice(1))
+const callbackType = inviteHash.get('type') || inviteQuery.get('type') || ''
+const inviteMarkerPresent = inviteQuery.get('auth') === 'invite'
+const tokenHash = inviteQuery.get('token_hash') || inviteHash.get('token_hash')
+const callbackHasCredential = Boolean(
+  tokenHash || inviteQuery.get('code') || inviteHash.get('access_token')
+)
+const tokenHashInvite = Boolean(tokenHash && (
+  callbackType === 'invite' || (!callbackType && inviteMarkerPresent)
+))
+const inviteCallbackPresent = callbackType === 'invite'
+  || (!callbackType && (inviteQuery.get('code') || inviteHash.get('access_token')))
+  || tokenHashInvite
+const inviteFlowRequested = inviteMarkerPresent || inviteCallbackPresent
+let inviteValidationStarted = false
+let inviteTokenVerificationPending = false
+let verifiedInviteUserId = null
+
+function openInviteDialog(status = 'Validando el enlace de invitación…') {
+  if (!inviteDialog.open) inviteDialog.showModal()
+  inviteStatus.textContent = status
+  inviteStatus.hidden = false
+  inviteForm.hidden = true
+  inviteComplete.hidden = true
+}
+
+function showInviteLinkError(message) {
+  if (!inviteDialog.open) inviteDialog.showModal()
+  const callbackError = inviteQuery.get('error_description') || inviteQuery.get('error')
+    || inviteHash.get('error_description') || inviteHash.get('error')
+  inviteStatus.textContent = callbackError ? `${message} ${callbackError}` : message
+  inviteStatus.hidden = false
+  inviteForm.hidden = true
+}
+
 async function showInviteFormForWorker(user) {
+  openInviteDialog('Verificando el perfil del trabajador…')
   const { data: profile, error } = await supabase.from('profiles')
     .select('rol,activo').eq('id', user.id).maybeSingle()
   if (error || !profile || profile.rol !== 'trabajador' || !profile.activo) {
-    inviteStatus.textContent = 'Este enlace no corresponde a una invitación activa de trabajador. Inicia sesión desde el panel o solicita una invitación nueva.'
+    showInviteLinkError('Este enlace no corresponde a una invitación válida de un trabajador activo. Solicita una invitación nueva al administrador.')
     return
   }
+  verifiedInviteUserId = user.id
   inviteStatus.hidden = true
   inviteError.hidden = true
   inviteForm.hidden = false
   inviteForm.elements.password.focus()
 }
 
-function showInviteLinkError(message) {
-  const query = new URLSearchParams(window.location.search)
-  const hash = new URLSearchParams(window.location.hash.slice(1))
-  const callbackError = query.get('error_description') || query.get('error')
-    || hash.get('error_description') || hash.get('error')
-  inviteStatus.textContent = callbackError ? `${message} ${callbackError}` : message
+if (inviteMarkerPresent || inviteCallbackPresent) openInviteDialog()
+
+if (supabase) {
+  supabase.auth.onAuthStateChange((event, session) => {
+    if (event === 'INITIAL_SESSION') {
+      if (inviteFlowRequested && !session && !inviteTokenVerificationPending) {
+        showInviteLinkError('No se pudo validar el enlace de invitación. Puede haber vencido o ya haberse usado.')
+      } else if (inviteMarkerPresent && session && !inviteCallbackPresent) {
+        showInviteLinkError('No se detectó un token de invitación válido. Abre el enlace completo enviado por correo.')
+      }
+      return
+    }
+
+    if (event !== 'SIGNED_IN' || !session) return
+    if (!inviteCallbackPresent || (callbackType && callbackType !== 'invite')) {
+      if (inviteMarkerPresent) showInviteLinkError('No se pudo confirmar que esta sesión provenga de una invitación válida.')
+      return
+    }
+    if (inviteValidationStarted) return
+    inviteValidationStarted = true
+    void showInviteFormForWorker(session.user).catch(() => {
+      showInviteLinkError('No se pudo comprobar el perfil del trabajador. Intenta abrir el enlace de nuevo.')
+    })
+  })
+
+  if (tokenHashInvite) {
+    inviteTokenVerificationPending = true
+    openInviteDialog()
+    supabase.auth.verifyOtp({ token_hash: tokenHash, type: 'invite' }).then(({ error }) => {
+      inviteTokenVerificationPending = false
+      if (error) showInviteLinkError(`No se pudo validar la invitación: ${error.message}`)
+      else {
+        const cleanUrl = new URL(window.location.href)
+        cleanUrl.searchParams.delete('token_hash')
+        cleanUrl.searchParams.delete('type')
+        cleanUrl.hash = ''
+        window.history.replaceState({}, document.title, cleanUrl)
+      }
+    }).catch(() => {
+      inviteTokenVerificationPending = false
+      showInviteLinkError('No se pudo conectar con Supabase para validar la invitación.')
+    })
+  } else if ((inviteMarkerPresent || inviteCallbackPresent) && (!callbackHasCredential || tokenHash)) {
+    showInviteLinkError('El enlace no contiene un token de invitación. Solicita que te envíen una invitación nueva.')
+  }
+} else if (inviteMarkerPresent || inviteCallbackPresent) {
+  showInviteLinkError('No se pudo validar el enlace. La conexión con Supabase no está configurada.')
 }
 
-if (new URLSearchParams(window.location.search).get('auth') === 'invite') {
-  inviteDialog.showModal()
-  if (!supabase) {
-    showInviteLinkError('No se pudo validar el enlace. La conexión con Supabase no está configurada.')
-  } else {
-    let inviteSessionChecked = false
-    supabase.auth.onAuthStateChange((event, session) => {
-      if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
-      if (!session) {
-        if (event === 'INITIAL_SESSION') showInviteLinkError('No se pudo validar el enlace de invitación. Puede haber vencido o ya haberse usado.')
-        return
-      }
-      if (inviteSessionChecked) return
-      inviteSessionChecked = true
-      void showInviteFormForWorker(session.user).catch(() => {
-        showInviteLinkError('No se pudo comprobar el perfil del trabajador. Intenta abrir el enlace de nuevo o inicia sesión desde el panel.')
-      })
-    })
-  }
-}
+inviteForm.querySelectorAll('[data-toggle-password]').forEach(button => {
+  button.addEventListener('click', () => {
+    const input = button.parentElement.querySelector('input')
+    const show = input.type === 'password'
+    input.type = show ? 'text' : 'password'
+    button.textContent = show ? 'Ocultar' : 'Mostrar'
+    button.setAttribute('aria-label', `${show ? 'Ocultar' : 'Mostrar'} ${input.name === 'password' ? 'nueva contraseña' : 'confirmación de contraseña'}`)
+    button.setAttribute('aria-pressed', String(show))
+  })
+})
 
 inviteForm.addEventListener('submit', async event => {
   event.preventDefault()
@@ -64,6 +135,12 @@ inviteForm.addEventListener('submit', async event => {
     inviteError.textContent = 'Las contraseñas no coinciden.'
     inviteError.hidden = false
     inviteForm.elements.passwordConfirm.focus()
+    return
+  }
+  if (password.length < 12) {
+    inviteError.textContent = 'La contraseña debe tener al menos 12 caracteres.'
+    inviteError.hidden = false
+    inviteForm.elements.password.focus()
     return
   }
 
@@ -78,23 +155,48 @@ inviteForm.addEventListener('submit', async event => {
     inviteError.textContent = 'No se pudo conectar con Supabase. Comprueba tu conexión e inténtalo de nuevo.'
     inviteError.hidden = false
     submit.disabled = false
-    submit.textContent = 'Guardar contraseña'
+    submit.textContent = 'Establecer contraseña'
     return
   }
   if (error) {
     inviteError.textContent = `No se pudo guardar la contraseña: ${error.message}`
     inviteError.hidden = false
     submit.disabled = false
-    submit.textContent = 'Guardar contraseña'
+    submit.textContent = 'Establecer contraseña'
     return
   }
 
-  await supabase.auth.signOut()
+  const { data: profile, error: profileError } = await supabase.from('profiles')
+    .select('rol,activo').eq('id', verifiedInviteUserId || '').maybeSingle()
+  if (profileError || !profile || profile.rol !== 'trabajador' || !profile.activo) {
+    await supabase.auth.signOut()
+    inviteError.textContent = 'La contraseña se actualizó, pero el perfil ya no está activo como trabajador. Contacta al administrador para revisar tu acceso.'
+    inviteError.hidden = false
+    return
+  }
+
   inviteForm.hidden = true
   inviteComplete.hidden = false
   const cleanUrl = new URL(window.location.href)
   cleanUrl.searchParams.delete('auth')
+  cleanUrl.searchParams.delete('token_hash')
+  cleanUrl.searchParams.delete('type')
+  cleanUrl.searchParams.delete('code')
+  cleanUrl.hash = ''
   window.history.replaceState({}, document.title, cleanUrl)
+})
+
+document.querySelector('[data-invite-sign-out]').addEventListener('click', async event => {
+  const button = event.currentTarget
+  button.disabled = true
+  const { error } = await supabase.auth.signOut()
+  if (error) {
+    inviteSignOutError.textContent = `No se pudo cerrar la sesión: ${error.message}`
+    inviteSignOutError.hidden = false
+    button.disabled = false
+    return
+  }
+  document.querySelector('[data-invite-complete] > p').textContent = 'Sesión cerrada. Puedes iniciar sesión con tu correo y la contraseña que acabas de establecer.'
 })
 
 const menuButton = document.querySelector('[data-menu-toggle]')
