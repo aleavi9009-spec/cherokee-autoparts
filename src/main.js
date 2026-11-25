@@ -35,8 +35,22 @@ const cartError = document.querySelector('[data-cart-error]')
 const checkoutForm = document.querySelector('[data-checkout-form]')
 const submitOrder = document.querySelector('[data-submit-order]')
 const orderSuccess = document.querySelector('[data-order-success]')
+const cartToast = document.querySelector('[data-cart-toast]')
 let products = []
 let catalogReady = false
+let toastTimeout
+
+function showCartToast(productName) {
+  cartToast.textContent = `¡${productName} agregado al carrito!`
+  cartToast.classList.remove('is-visible')
+  clearTimeout(toastTimeout)
+  requestAnimationFrame(() => cartToast.classList.add('is-visible'))
+  toastTimeout = setTimeout(() => cartToast.classList.remove('is-visible'), 2600)
+}
+
+function priceInCents(price) {
+  return Math.round(Number(price) * 100)
+}
 
 function currentProducts() {
   return new Map(products.map(product => [product.id, product]))
@@ -75,11 +89,12 @@ function renderCart() {
     return `<article class="cart-item" data-cart-item="${e(item.id)}">
       ${p.imagen_url ? `<img src="${e(p.imagen_url)}" alt=""/>` : '<div class="cart-item__placeholder"></div>'}
       <div class="cart-item__info"><h3>${e(p.nombre)}</h3><span>${money(p.precio)} · ${available ? `Stock: ${Number(liveProduct.stock)}` : 'No disponible actualmente'}</span><div class="quantity-control"><button type="button" data-decrease="${e(item.id)}" aria-label="Reducir cantidad">−</button><span>${item.quantity}</span><button type="button" data-increase="${e(item.id)}" aria-label="Aumentar cantidad" ${!liveProduct || item.quantity >= Number(liveProduct.stock) ? 'disabled' : ''}>+</button><button type="button" class="remove-item" data-remove="${e(item.id)}">Eliminar</button></div></div>
-      <strong class="cart-item__subtotal">${money(Number(currentProduct.precio) * item.quantity)}</strong>
+      <strong class="cart-item__subtotal">${money(priceInCents(currentProduct.precio) * item.quantity / 100)}</strong>
       ${available ? '' : '<span class="cart-item__warning">Revisa disponibilidad</span>'}
     </article>`
   }).join('')
-  cartTotal.textContent = money(items.reduce((sum, item) => sum + Number(item.product.precio) * item.quantity, 0))
+  const totalCents = items.reduce((sum, item) => sum + priceInCents(item.product.precio) * item.quantity, 0)
+  cartTotal.textContent = money(totalCents / 100)
   const unavailable = items.some(item => {
     const product = productMap.get(item.id)
     return !product || item.quantity > Number(product.stock)
@@ -135,6 +150,7 @@ document.addEventListener('click', async event => {
     const product = currentProducts().get(addButton.dataset.add)
     if (product && addCartItem(product)) {
       renderProducts()
+      showCartToast(product.nombre)
     } else {
       showCartError('No hay más unidades disponibles para este producto.')
       openCart()
@@ -218,7 +234,9 @@ checkoutForm.addEventListener('submit', async event => {
   checkoutForm.hidden = true
   orderSuccess.hidden = false
   document.querySelector('[data-order-id]').textContent = receipt?.order_id || 'Registrado'
-  document.querySelector('[data-order-summary]').innerHTML = `<ul>${(receipt?.items || []).map(item => `<li>${escapeHTML(item.nombre)} × ${Number(item.cantidad)} <span>${money(item.subtotal)}</span></li>`).join('')}</ul><p>Total: <strong>${money(receipt?.total)}</strong></p>`
+  const orderTotal = Number(receipt?.total ?? items.reduce((sum, item) => sum + priceInCents(item.product.precio) * item.quantity, 0) / 100)
+  document.querySelector('[data-order-summary]').innerHTML = `<ul>${(receipt?.items || []).map(item => `<li>${escapeHTML(item.nombre)} × ${Number(item.cantidad)} <span>${money(item.subtotal)}</span></li>`).join('')}</ul><p>Total: <strong>${money(orderTotal)}</strong></p>`
+  document.querySelector('[data-qr-total]').textContent = money(orderTotal)
   const qrContainer = document.querySelector('[data-order-qr]')
   const qrImage = document.querySelector('[data-qr-image]')
   const qrMissing = document.querySelector('[data-qr-missing]')
