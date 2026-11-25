@@ -10,7 +10,7 @@ Antes de publicar el frontend o desplegar `manage-workers`, ejecuta el contenido
 
 ## Crear cuentas de trabajadores
 
-El administrador crea la cuenta desde Trabajadores con nombre y correo. `manage-workers` comprueba duplicados, crea un usuario confirmado mediante Auth Admin API, asigna el rol `trabajador` y muestra una contraseña temporal aleatoria una sola vez. Copia y entrega esa contraseña al trabajador. Al iniciar sesión, deberá definir una nueva antes de acceder al panel. La clave `SUPABASE_SERVICE_ROLE_KEY` solo se usa dentro de la Edge Function.
+El administrador crea la cuenta desde Trabajadores con nombre y correo. `manage-workers` comprueba duplicados, crea un usuario confirmado mediante Auth Admin API, asigna el rol `trabajador` y muestra una contraseña temporal aleatoria una sola vez. También permite restablecer la contraseña temporal de un trabajador existente y reparar perfiles ausentes para usuarios Auth seleccionados; la reparación conserva el UUID y correo, y usa `INSERT` para no sobrescribir perfiles existentes. En ambos casos el trabajador debe cambiar la contraseña al iniciar sesión. La clave `SUPABASE_SERVICE_ROLE_KEY` solo se usa dentro de la Edge Function.
 
 Desde la raíz del proyecto, con Supabase CLI instalado:
 
@@ -20,7 +20,7 @@ supabase link --project-ref eznpkrvnkldtjqitnplz
 supabase functions deploy manage-workers
 ```
 
-`supabase/config.toml` mantiene `verify_jwt = true`. La función comprueba el JWT y el perfil en cada solicitud. Solo un administrador activo puede crear, listar, editar y activar o desactivar trabajadores. El propio trabajador puede completar el cambio pendiente de contraseña; la función actualiza Auth primero y marca el perfil como completado solo después del éxito. No puede cambiar su rol.
+`supabase/config.toml` mantiene `verify_jwt = true`. La función comprueba el JWT y el perfil en cada solicitud. Solo un administrador activo puede crear, listar, editar, restablecer contraseñas temporales, reparar perfiles ausentes y activar o desactivar trabajadores. El propio trabajador puede completar el cambio pendiente de contraseña; la función actualiza Auth primero y marca el perfil como completado solo después del éxito. No puede cambiar su rol.
 
 Supabase provee `SUPABASE_URL`, `SUPABASE_ANON_KEY` y `SUPABASE_SERVICE_ROLE_KEY` al runtime. No agregues la clave de servicio a `.env.local`, variables `VITE_*` ni al frontend. Si se define `ALLOWED_ORIGIN`, configúralo con `https://aleavi9009-spec.github.io`; de lo contrario la función conserva CORS `*` y sigue exigiendo JWT y autorización por perfil.
 

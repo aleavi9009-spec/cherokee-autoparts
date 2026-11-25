@@ -36,7 +36,7 @@ where id = 'UUID-DEL-USUARIO-CREADO';
 
 ## 4. Registrar trabajadores
 
-La pestaña **Trabajadores** crea cuentas confirmadas con contraseñas temporales mediante la Edge Function `manage-workers`. El perfil se crea con rol `trabajador` y obliga a cambiar la contraseña en el primer acceso. Ejecuta `migrations/20261125000100_worker_password_change.sql` en SQL Editor antes de publicar el frontend y desplegar la función. La clave `service_role` permanece únicamente en Edge Functions; el frontend no puede crear perfiles con privilegios. Para sincronizar correos editados luego de confirmarlos en Auth, ejecuta una vez `worker_email_sync.sql` en SQL Editor.
+La pestaña **Trabajadores** crea cuentas confirmadas con contraseñas temporales mediante la Edge Function `manage-workers`. También puede restablecer la contraseña de trabajadores existentes y crear un perfil faltante para un usuario Auth existente sin duplicar su cuenta. El perfil trabajador obliga a cambiar la contraseña en el primer acceso. Ejecuta `migrations/20261125000100_worker_password_change.sql` en SQL Editor antes de publicar el frontend y desplegar la función. La clave `service_role` permanece únicamente en Edge Functions; el frontend no puede crear perfiles con privilegios. Para sincronizar correos editados luego de confirmarlos en Auth, ejecuta una vez `worker_email_sync.sql` en SQL Editor.
 
 ## 5. Conectar el frontend
 

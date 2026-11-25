@@ -13,6 +13,7 @@ let pendingPasswordUser = null
 let page = 'dashboard'
 let products = []
 let workers = []
+let orphanAccounts = []
 
 function message(text, type = '') {
   const target = document.querySelector('[data-admin-message]')
@@ -283,9 +284,10 @@ async function loadWorkers({ preserveMessage = false } = {}) {
   if (!preserveMessage) message('')
   content.innerHTML = '<p class="admin-loading">Cargando trabajadores…</p>'
   try {
-    const { workers: list } = await workerRequest({ action: 'list' })
+    const { workers: list, orphanAccounts: missingProfiles } = await workerRequest({ action: 'list' })
     if (page !== 'team') return
     workers = list || []
+    orphanAccounts = missingProfiles || []
     renderWorkers()
   } catch (error) {
     if (page !== 'team') return
@@ -296,18 +298,24 @@ async function loadWorkers({ preserveMessage = false } = {}) {
 
 function renderWorkers() {
   const content = root.querySelector('[data-admin-content]')
-  content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Personal con rol trabajador. La cuenta administradora está protegida.</p></div><button class="admin-primary" type="button" data-worker-add>+ Agregar trabajador</button></div><form class="admin-card worker-form" data-worker-form hidden><h3>Crear cuenta de trabajador</h3><div class="worker-form-grid"><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><div class="worker-create-note"><span class="status-pill is-good">Rol trabajador · cuenta activa</span><small>Se generará una contraseña temporal aleatoria. Cópiala y entrégasela al trabajador; deberá cambiarla al iniciar sesión.</small></div></div><div class="form-actions"><button class="admin-secondary" type="button" data-worker-cancel>Cancelar</button><button class="admin-primary" type="submit">Crear cuenta de trabajador</button></div></form><div class="admin-card team-list"><div class="admin-list-head"><h3>Personal registrado</h3><span>${workers.length} ${workers.length === 1 ? 'trabajador' : 'trabajadores'}</span></div>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="worker-role">Rol: Trabajador</span>${worker.must_change_password ? '<span class="status-pill is-muted">Cambio de contraseña pendiente</span>' : ''}<span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><div class="worker-actions"><button type="button" data-worker-edit="${e(worker.id)}">Editar datos</button><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></div></article>`).join('') : '<div class="admin-empty worker-empty"><p>No hay trabajadores registrados todavía.</p><button class="admin-primary" type="button" data-worker-empty-add>+ Agregar trabajador</button></div>'}</div><dialog class="detail-dialog worker-edit-dialog" data-worker-dialog><button class="dialog-close" type="button" data-worker-dialog-close aria-label="Cerrar">×</button><h2>Editar trabajador</h2><form data-worker-edit-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><p>Rol: <strong>Trabajador</strong>. El nivel de acceso no se puede elevar desde este formulario.</p><div class="form-actions"><button class="admin-secondary" type="button" data-worker-edit-cancel>Cancelar</button><button class="admin-primary" type="submit">Guardar cambios</button></div></form></dialog>`
+  content.innerHTML = `<div class="admin-section-head"><div><h2>Trabajadores</h2><p>Personal con rol trabajador. La cuenta administradora está protegida.</p></div><button class="admin-primary" type="button" data-worker-add>+ Agregar trabajador</button></div><form class="admin-card worker-form" data-worker-form hidden><h3>Crear cuenta de trabajador</h3><div class="worker-form-grid"><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><div class="worker-create-note"><span class="status-pill is-good">Rol trabajador · cuenta activa</span><small>Se generará una contraseña temporal aleatoria. Cópiala y entrégasela al trabajador; deberá cambiarla al iniciar sesión.</small></div></div><div class="form-actions"><button class="admin-secondary" type="button" data-worker-cancel>Cancelar</button><button class="admin-primary" type="submit">Crear cuenta de trabajador</button></div></form><div class="admin-card team-list"><div class="admin-list-head"><h3>Personal registrado</h3><span>${workers.length} ${workers.length === 1 ? 'trabajador' : 'trabajadores'}</span></div>${workers.length ? workers.map(worker => `<article class="worker-row"><div><strong>${e(worker.nombre || 'Sin nombre')}</strong><span>${e(worker.email)}</span><span class="worker-role">Rol: Trabajador</span>${worker.must_change_password ? '<span class="status-pill is-muted">Cambio de contraseña pendiente</span>' : ''}<span class="status-pill ${worker.activo ? 'is-good' : 'is-muted'}">${worker.activo ? 'Activo' : 'Desactivado'}</span></div><div class="worker-actions"><button type="button" data-worker-edit="${e(worker.id)}">Editar datos</button><button type="button" data-worker-reset="${e(worker.id)}" data-worker-email="${e(worker.email)}">Restablecer contraseña temporal</button><button type="button" class="${worker.activo ? 'danger-link' : 'activate-link'}" data-worker-toggle="${e(worker.id)}" data-active="${worker.activo}">${worker.activo ? 'Desactivar' : 'Reactivar'}</button></div></article>`).join('') : '<div class="admin-empty worker-empty"><p>No hay trabajadores registrados todavía.</p><button class="admin-primary" type="button" data-worker-empty-add>+ Agregar trabajador</button></div>'}</div><section class="admin-card orphan-list"><div class="admin-list-head"><h3>Cuentas Auth sin perfil</h3><span>${orphanAccounts.length} ${orphanAccounts.length === 1 ? 'cuenta' : 'cuentas'}</span></div>${orphanAccounts.length ? orphanAccounts.map(account => `<article class="worker-row"><div><strong>${e(account.nombre || 'Nombre pendiente')}</strong><span>${e(account.email || 'Sin correo en Auth')}</span><span class="orphan-id">UUID ${e(account.id)}</span></div><div class="worker-actions">${account.email ? `<button type="button" data-orphan-repair="${e(account.id)}" data-orphan-email="${e(account.email)}" data-orphan-name="${e(account.nombre)}">Completar perfil</button>` : '<span class="status-pill is-muted">Auth no tiene correo utilizable</span>'}</div></article>`).join('') : '<p class="admin-empty">No se encontraron cuentas Auth sin perfil.</p>'}</section><dialog class="detail-dialog worker-edit-dialog" data-worker-dialog><button class="dialog-close" type="button" data-worker-dialog-close aria-label="Cerrar">×</button><h2>Editar trabajador</h2><form data-worker-edit-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo electrónico<input name="email" type="email" required maxlength="254" autocomplete="email"/></label><p>Rol: <strong>Trabajador</strong>. El nivel de acceso no se puede elevar desde este formulario.</p><div class="form-actions"><button class="admin-secondary" type="button" data-worker-edit-cancel>Cancelar</button><button class="admin-primary" type="submit">Guardar cambios</button></div></form></dialog><dialog class="detail-dialog worker-edit-dialog" data-orphan-dialog><button class="dialog-close" type="button" data-orphan-close aria-label="Cerrar">×</button><h2>Completar perfil de trabajador</h2><form data-orphan-form><input type="hidden" name="userId"/><label>Nombre completo<input name="nombre" required minlength="2" maxlength="120" autocomplete="name"/></label><label>Correo de la cuenta Auth<input name="email" readonly/></label><p>Se conservará el UUID y el correo existentes. El perfil tendrá rol trabajador y deberá cambiar la contraseña al ingresar.</p><div class="form-actions"><button class="admin-secondary" type="button" data-orphan-cancel>Cancelar</button><button class="admin-primary" type="submit">Crear perfil</button></div></form></dialog>`
   const form = content.querySelector('[data-worker-form]')
   content.querySelector('[data-worker-add]').addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
   content.querySelector('[data-worker-cancel]').addEventListener('click', () => { form.reset(); form.hidden = true })
   content.querySelector('[data-worker-empty-add]')?.addEventListener('click', () => { form.hidden = false; form.querySelector('[name="nombre"]').focus() })
   form.addEventListener('submit', createWorker)
   content.querySelectorAll('[data-worker-toggle]').forEach(button => button.addEventListener('click', () => toggleWorker(button.dataset.workerToggle, button.dataset.active === 'true')))
+  content.querySelectorAll('[data-worker-reset]').forEach(button => button.addEventListener('click', () => resetWorkerPassword(button.dataset.workerReset, button.dataset.workerEmail, button)))
+  content.querySelectorAll('[data-orphan-repair]').forEach(button => button.addEventListener('click', () => openOrphanRepair(button.dataset.orphanRepair, button.dataset.orphanEmail, button.dataset.orphanName)))
   content.querySelectorAll('[data-worker-edit]').forEach(button => button.addEventListener('click', () => openWorkerEdit(button.dataset.workerEdit)))
   const dialog = content.querySelector('[data-worker-dialog]')
   content.querySelector('[data-worker-dialog-close]').addEventListener('click', () => dialog.close())
   content.querySelector('[data-worker-edit-cancel]').addEventListener('click', () => dialog.close())
   content.querySelector('[data-worker-edit-form]').addEventListener('submit', saveWorker)
+  const orphanDialog = content.querySelector('[data-orphan-dialog]')
+  content.querySelector('[data-orphan-close]').addEventListener('click', () => orphanDialog.close())
+  content.querySelector('[data-orphan-cancel]').addEventListener('click', () => orphanDialog.close())
+  content.querySelector('[data-orphan-form]').addEventListener('submit', repairOrphanProfile)
 }
 
 function openWorkerEdit(userId) {
@@ -321,10 +329,52 @@ function openWorkerEdit(userId) {
   dialog.showModal()
 }
 
-function showCreatedWorkerPassword(password, email) {
+function openOrphanRepair(userId, email, nombre) {
+  const dialog = root.querySelector('[data-orphan-dialog]')
+  const form = dialog.querySelector('[data-orphan-form]')
+  form.reset()
+  form.elements.userId.value = userId
+  form.elements.email.value = email
+  form.elements.nombre.value = nombre
+  dialog.showModal()
+}
+
+async function repairOrphanProfile(event) {
+  event.preventDefault()
+  const form = event.currentTarget
+  const button = form.querySelector('[type="submit"]')
+  const values = new FormData(form)
+  button.disabled = true
+  button.textContent = 'Guardando perfil…'
+  try {
+    await workerRequest({ action: 'repair-profile', userId: values.get('userId'), nombre: values.get('nombre') })
+    root.querySelector('[data-orphan-dialog]').close()
+    await loadWorkers({ preserveMessage: true })
+    message('Perfil reparado. El trabajador deberá cambiar su contraseña temporal al iniciar sesión.', 'is-success')
+  } catch (error) {
+    message(`No se pudo reparar el perfil: ${error.message}`, 'is-error')
+  }
+  button.disabled = false
+  button.textContent = 'Crear perfil'
+}
+
+async function resetWorkerPassword(userId, email, button) {
+  if (!window.confirm(`Se reemplazará la contraseña de ${email} por una temporal nueva y se exigirá cambiarla al iniciar sesión. ¿Continuar?`)) return
+  button.disabled = true
+  try {
+    const result = await workerRequest({ action: 'reset-password', userId })
+    showCreatedWorkerPassword(result.temporaryPassword, email, true)
+  } catch (error) {
+    message(`No se pudo restablecer la contraseña: ${error.message}`, 'is-error')
+  } finally {
+    button.disabled = false
+  }
+}
+
+function showCreatedWorkerPassword(password, email, reset = false) {
   const dialog = document.createElement('dialog')
   dialog.className = 'detail-dialog worker-created-dialog'
-  dialog.innerHTML = '<button class="dialog-close" type="button" data-created-close aria-label="Cerrar">×</button><p class="admin-eyebrow">CUENTA CREADA</p><h2>Entrega esta contraseña temporal</h2><p>El trabajador iniciará sesión con este correo y deberá cambiar la contraseña antes de acceder al panel.</p><label>Correo electrónico<input data-created-email readonly/></label><label>Contraseña temporal<div class="created-password-field"><input data-created-password type="text" readonly/><button type="button" data-created-copy>Copiar</button></div></label><p class="created-copy-status" data-created-copy-status role="status"></p><div class="form-actions"><button class="admin-primary" type="button" data-created-done>Listo</button></div>'
+  dialog.innerHTML = `<button class="dialog-close" type="button" data-created-close aria-label="Cerrar">×</button><p class="admin-eyebrow">${reset ? 'CONTRASEÑA RESTABLECIDA' : 'CUENTA CREADA'}</p><h2>${reset ? 'Entrega esta nueva contraseña' : 'Entrega esta contraseña temporal'}</h2><p>El trabajador iniciará sesión con este correo y deberá cambiar la contraseña antes de acceder al panel.</p><label>Correo electrónico<input data-created-email readonly/></label><label>Contraseña temporal<div class="created-password-field"><input data-created-password type="text" readonly autocomplete="off"/><button type="button" data-created-copy>Copiar</button></div></label><p class="created-copy-status" data-created-copy-status role="status"></p><div class="form-actions"><button class="admin-primary" type="button" data-created-done>Listo</button></div>`
   root.append(dialog)
   const passwordInput = dialog.querySelector('[data-created-password]')
   const copyStatus = dialog.querySelector('[data-created-copy-status]')
@@ -346,7 +396,10 @@ function showCreatedWorkerPassword(password, email) {
   dialog.addEventListener('close', () => {
     passwordInput.value = ''
     dialog.remove()
-    void loadWorkers({ preserveMessage: true }).then(() => message(`Cuenta creada para ${email}. Entrega la contraseña temporal al trabajador.`, 'is-success'))
+    void loadWorkers({ preserveMessage: true }).then(() => message(
+      reset ? `Contraseña temporal restablecida para ${email}.` : `Cuenta creada para ${email}. Entrega la contraseña temporal al trabajador.`,
+      'is-success',
+    ))
   }, { once: true })
   dialog.showModal()
 }
