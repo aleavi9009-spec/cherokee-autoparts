@@ -47,5 +47,11 @@ export function renderApp() {
       <section class="order-success" data-order-success hidden aria-live="polite"><p class="success-mark">✓</p><h3>¡Pedido registrado!</h3><p>Número de pedido: <strong data-order-id></strong></p><div data-order-summary></div><div class="order-qr" data-order-qr hidden><h4>QR para realizar el pago</h4><p>Escanéalo desde otro teléfono. El pedido se registró; esta página no procesa pagos.</p><p class="qr-amount">Monto del pedido: <strong data-qr-total></strong></p><img data-qr-image alt="Código QR de pago de CHEROKEE AUTO PARTS" hidden/><p class="qr-missing" data-qr-missing hidden>La imagen QR aún no está configurada. Contáctanos para coordinar el pago.</p></div><button class="button button--orange" type="button" data-close-cart>Listo</button></section>
     </dialog>
     <div class="cart-toast" data-cart-toast role="status" aria-live="polite" aria-atomic="true"></div>
+    <dialog class="invite-setup-dialog" data-invite-dialog aria-labelledby="invite-setup-title"><button class="dialog-close invite-setup-close" type="button" data-invite-close aria-label="Cerrar">×</button>
+      <div class="invite-setup-content"><p class="eyebrow eyebrow--dark"><span></span> ACCESO DE PERSONAL</p><h2 id="invite-setup-title">Configura tu contraseña</h2><p class="invite-setup-status" data-invite-status role="status">Validando el enlace de invitación…</p>
+        <form class="invite-setup-form" data-invite-form hidden><label>Nueva contraseña<input name="password" type="password" autocomplete="new-password" required minlength="8"/></label><label>Confirma la contraseña<input name="passwordConfirm" type="password" autocomplete="new-password" required minlength="8"/></label><p class="invite-setup-error" data-invite-error role="alert" hidden></p><button class="button button--orange" type="submit">Guardar contraseña</button></form>
+        <div class="invite-setup-complete" data-invite-complete hidden><p>Tu contraseña quedó configurada. Ya puedes iniciar sesión en el panel con tu correo.</p><a class="button button--orange" href="${base}admin.html">Ir al panel de personal <span>→</span></a></div>
+      </div>
+    </dialog>
   `
 }

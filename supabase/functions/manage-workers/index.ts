@@ -1,5 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 
+const INVITE_REDIRECT_URL = 'https://aleavi9009-spec.github.io/cherokee-autoparts/?auth=invite'
+
 const corsHeaders = {
   'Access-Control-Allow-Origin': Deno.env.get('ALLOWED_ORIGIN') || '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
@@ -68,7 +70,10 @@ Deno.serve(async (request) => {
     if (email.length > 254 || !/^\S+@\S+\.\S+$/.test(email) || nombre.length < 2 || nombre.length > 120) {
       return respond({ error: 'Ingresa un nombre y un correo válidos.' }, 400)
     }
-    const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, { data: { nombre } })
+    const { data, error } = await adminClient.auth.admin.inviteUserByEmail(email, {
+      data: { nombre },
+      redirectTo: INVITE_REDIRECT_URL,
+    })
     if (error) return respond({ error: error.message }, 400)
     return respond({ id: data.user.id, message: 'Invitación enviada.' }, 201)
   }

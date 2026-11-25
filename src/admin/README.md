@@ -33,3 +33,9 @@ update public.profiles set rol = 'admin' where id = 'UUID-DEL-ADMIN';
 ```
 
 El enlace de acceso al panel está en el pie de la página pública o puede abrirse directamente en `/admin.html`.
+
+## Invitaciones en GitHub Pages
+
+La Edge Function dirige las invitaciones a `https://aleavi9009-spec.github.io/cherokee-autoparts/?auth=invite`. Después de confirmar el enlace, la página pública procesa la sesión, verifica que el perfil activo tenga rol `trabajador` y permite establecer la contraseña. Tras guardarla, cierra la sesión para que el trabajador inicie sesión en `/cherokee-autoparts/admin.html`.
+
+En Supabase **Authentication → URL Configuration → Redirect URLs**, permite `https://aleavi9009-spec.github.io/cherokee-autoparts/**`. Revisa también **Authentication → Email Templates → Invite user**: conserva el enlace `{{ .ConfirmationURL }}` o usa `{{ .RedirectTo }}` como destino. No construyas el enlace con `{{ .SiteURL }}`; si la URL no está permitida o el template ignora `RedirectTo`, Supabase puede recurrir a `Site URL` (que actualmente apunta a localhost). Cada cambio a `manage-workers` requiere volver a desplegarla.

@@ -6,6 +6,97 @@ import { addCartItem, clearCart, getCartItems, removeCartItem, setCartItemQuanti
 
 document.querySelector('#app').innerHTML = renderApp()
 
+const inviteDialog = document.querySelector('[data-invite-dialog]')
+const inviteForm = document.querySelector('[data-invite-form]')
+const inviteStatus = document.querySelector('[data-invite-status]')
+const inviteError = document.querySelector('[data-invite-error]')
+const inviteComplete = document.querySelector('[data-invite-complete]')
+inviteDialog.querySelector('[data-invite-close]').addEventListener('click', () => inviteDialog.close())
+
+async function showInviteFormForWorker(user) {
+  const { data: profile, error } = await supabase.from('profiles')
+    .select('rol,activo').eq('id', user.id).maybeSingle()
+  if (error || !profile || profile.rol !== 'trabajador' || !profile.activo) {
+    inviteStatus.textContent = 'Este enlace no corresponde a una invitación activa de trabajador. Inicia sesión desde el panel o solicita una invitación nueva.'
+    return
+  }
+  inviteStatus.hidden = true
+  inviteError.hidden = true
+  inviteForm.hidden = false
+  inviteForm.elements.password.focus()
+}
+
+function showInviteLinkError(message) {
+  const query = new URLSearchParams(window.location.search)
+  const hash = new URLSearchParams(window.location.hash.slice(1))
+  const callbackError = query.get('error_description') || query.get('error')
+    || hash.get('error_description') || hash.get('error')
+  inviteStatus.textContent = callbackError ? `${message} ${callbackError}` : message
+}
+
+if (new URLSearchParams(window.location.search).get('auth') === 'invite') {
+  inviteDialog.showModal()
+  if (!supabase) {
+    showInviteLinkError('No se pudo validar el enlace. La conexión con Supabase no está configurada.')
+  } else {
+    let inviteSessionChecked = false
+    supabase.auth.onAuthStateChange((event, session) => {
+      if (event !== 'INITIAL_SESSION' && event !== 'SIGNED_IN') return
+      if (!session) {
+        if (event === 'INITIAL_SESSION') showInviteLinkError('No se pudo validar el enlace de invitación. Puede haber vencido o ya haberse usado.')
+        return
+      }
+      if (inviteSessionChecked) return
+      inviteSessionChecked = true
+      void showInviteFormForWorker(session.user).catch(() => {
+        showInviteLinkError('No se pudo comprobar el perfil del trabajador. Intenta abrir el enlace de nuevo o inicia sesión desde el panel.')
+      })
+    })
+  }
+}
+
+inviteForm.addEventListener('submit', async event => {
+  event.preventDefault()
+  if (!supabase) return
+  const password = inviteForm.elements.password.value
+  const confirmation = inviteForm.elements.passwordConfirm.value
+  if (password !== confirmation) {
+    inviteError.textContent = 'Las contraseñas no coinciden.'
+    inviteError.hidden = false
+    inviteForm.elements.passwordConfirm.focus()
+    return
+  }
+
+  const submit = inviteForm.querySelector('[type="submit"]')
+  submit.disabled = true
+  submit.textContent = 'Guardando…'
+  inviteError.hidden = true
+  let error
+  try {
+    ({ error } = await supabase.auth.updateUser({ password }))
+  } catch {
+    inviteError.textContent = 'No se pudo conectar con Supabase. Comprueba tu conexión e inténtalo de nuevo.'
+    inviteError.hidden = false
+    submit.disabled = false
+    submit.textContent = 'Guardar contraseña'
+    return
+  }
+  if (error) {
+    inviteError.textContent = `No se pudo guardar la contraseña: ${error.message}`
+    inviteError.hidden = false
+    submit.disabled = false
+    submit.textContent = 'Guardar contraseña'
+    return
+  }
+
+  await supabase.auth.signOut()
+  inviteForm.hidden = true
+  inviteComplete.hidden = false
+  const cleanUrl = new URL(window.location.href)
+  cleanUrl.searchParams.delete('auth')
+  window.history.replaceState({}, document.title, cleanUrl)
+})
+
 const menuButton = document.querySelector('[data-menu-toggle]')
 const navigation = document.querySelector('[data-navigation]')
 menuButton?.addEventListener('click', () => {
